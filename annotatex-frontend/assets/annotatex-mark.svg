@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">AnnotateX</title>
+  <defs>
+    <linearGradient id="lime" x1="12" y1="10" x2="53" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e4ff3b"/>
+      <stop offset="1" stop-color="#a7d900"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="17" fill="#11130f"/>
+  <rect x="1.5" y="1.5" width="61" height="61" rx="15.5" fill="none" stroke="#d8ff27" stroke-opacity=".36" stroke-width="3"/>
+  <path d="M16 46 27.7 18h8.5L48 46h-7.2l-2.3-6.2H25.8L23.3 46H16Zm12.1-12h8.4l-4.2-11.3L28.1 34Z" fill="url(#lime)"/>
+  <path d="m37.5 19.5 10.8 11.8-10.8 11.7" fill="none" stroke="#f4f7e9" stroke-linecap="round" stroke-linejoin="round" stroke-width="4.5"/>
+</svg>
