@@ -1,0 +1,27 @@
+{
+  "name": "annotatex-backend",
+  "version": "1.0.0",
+  "description": "Express API and same-origin web server for the AnnotateX Bradbury MVP",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "check": "node --check server.js && node --check services/genlayer.js && node --check ../annotatex-frontend/script.js && node --check ../annotatex-frontend/dashboards/dashboard-common.js && node --check ../annotatex-frontend/dashboards/client-dashboard.js && node --check ../annotatex-frontend/dashboards/freelancer-dashboard.js",
+    "test": "npm run check && node --test tests/flow-guards.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
+    "express": "^5.2.1",
+    "express-session": "^1.19.0",
+    "genlayer-js": "^1.1.8"
+  }
+}
