@@ -69,7 +69,7 @@ The browser approves wallet transactions. The backend prepares calldata, enforce
 - Current deployed AnnotateX contract: `0x63E06B5a9200d737ED6148607110B64356220015`
 - Consensus main contract used for Intelligent Contract transactions: `0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D`
 
-The contract address is public configuration, not a secret. Verify it against the intended Bradbury deployment before a public launch.
+The contract address is public configuration, not a secret. The production deployment is configured to use this Bradbury contract; verify it when configuring another environment.
 
 ## Local setup
 
@@ -115,9 +115,11 @@ Use [`.env.example`](.env.example) or [`annotatex-backend/.env.example`](annotat
 - `GENLAYER_EXPLORER_URL`: Bradbury Explorer base URL
 - `ANNOTATEX_DATA_DIR`: optional directory for MVP JSON persistence
 
-## Deployment recommendation
+## Deployment and production notes
 
-Deploy the backend as one Node web service that serves both the static frontend and `/api/*`. This keeps authentication same-origin and avoids cross-site cookie complexity. A host with a persistent disk is required for the current JSON store; an ephemeral filesystem will lose `users.json` and `marketplace.json` on restart or redeploy.
+The current production deployment is available at [annotatex.onrender.com](https://annotatex.onrender.com/). It runs the backend as one Node web service that serves both the static frontend and `/api/*`, keeping authentication same-origin and avoiding cross-site cookie complexity.
+
+The current MVP uses a JSON file store. A persistent disk is required for user and marketplace data to survive a restart or redeploy; an ephemeral filesystem will lose `users.json` and `marketplace.json`.
 
 Recommended MVP configuration:
 
@@ -130,7 +132,7 @@ Recommended MVP configuration:
 - Production `SESSION_SECRET`: a secret configured in the host, never committed
 - Production `GENLAYER_CONTRACT`: the Bradbury contract address
 
-Render with a persistent disk or Fly.io with a mounted volume are suitable for this file-backed MVP. For a more durable public service, replace the JSON store with a managed database in a later iteration; that is intentionally outside this release-preparation pass.
+Render with a persistent disk or Fly.io with a mounted volume are suitable for this file-backed MVP. For future scale, replace the JSON store with a managed database; that remains outside the current release.
 
 ## Security notes
 
@@ -152,15 +154,18 @@ Render with a persistent disk or Fly.io with a mounted volume are suitable for t
 
 ## Demo and screenshots
 
-- Live demo: **to be deployed**
-- Product walkthrough: **to be recorded**
-- Screenshots: **to be added soon**
+- Live demo: [https://annotatex.onrender.com/](https://annotatex.onrender.com/)
+- Product walkthrough: **Coming soon**
+- Screenshots: **Coming soon**
 
 ## GenLayer Builders Program submission checklist
 
-- [ ] Deploy the backend with persistent storage.
-- [ ] Set production environment variables in the hosting provider.
+- [x] Deploy the backend and publish the live Render URL.
+- [x] Configure production environment variables in the hosting provider.
+- [x] Deploy the AnnotateX Intelligent Contract on GenLayer Bradbury Testnet.
+- [x] Connect the production application to the deployed Bradbury contract.
 - [ ] Run a fresh Bradbury end-to-end test with separate client and freelancer wallets.
 - [ ] Capture the funding, claim, submission/consensus, and payout Explorer links.
-- [ ] Add the live URL and screenshots above.
+- [x] Add the live URL above.
+- [ ] Optionally add screenshots or a product walkthrough; neither is required for the application to be functional or for this README to document the deployed project.
 - [ ] Submit the public GitHub repository and this README.
