@@ -34,7 +34,15 @@ function renderTasks() {
     list.innerHTML = `<div class="dashboard-empty"><h3>Your pipeline is clear.</h3><p>Create a bounty and it will appear here with its funding, claim and verification state.</p><a class="dashboard-button primary" href="#create">Create your first bounty</a></div>`;
     return;
   }
-  list.innerHTML = tasks.map((task) => `<article class="dashboard-bounty"><div class="bounty-card-top"><span class="bounty-status status-${statusLabel(task.status)}">${escapeHTML(displayStatus(task.status))}</span><span class="bounty-amount">${escapeHTML(formatAmount(task.bountyAmount))}</span></div><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(task.description)}</p><div class="task-meta"><span>Created ${escapeHTML(formatDate(task.createdAt))}</span><span>${task.claimedBy ? `Claimed by ${escapeHTML(shortWallet(task.claimedBy))}` : "Open to the marketplace"}</span></div><div class="task-meta"><span>${task.chain?.linked ? `Bradbury task #${escapeHTML(String(task.chain.taskId))}` : "Local record  -  not on-chain"}</span></div>${task.verification && task.chain?.linked ? `<div class="verification-note"><strong>GenLayer: ${escapeHTML(displayStatus(task.verification.verdict || "UNDER_REVIEW"))}</strong><span>${task.status === "UNDER_REVIEW" ? "Validators are evaluating the submission against your original instructions." : "Consensus verdict recorded on-chain."}</span></div>` : ""}</article>`).join("");
+  list.innerHTML = tasks.map((task) => {
+    const fundingLink = task.chain?.fundingTransactionUrl
+      ? `<a class="explorer-link" href="${escapeHTML(task.chain.fundingTransactionUrl)}" target="_blank" rel="noopener noreferrer">Track funding in Bradbury Explorer -&gt;</a>`
+      : "";
+    const payoutLink = task.chain?.payoutTransactionUrl
+      ? `<a class="explorer-link" href="${escapeHTML(task.chain.payoutTransactionUrl)}" target="_blank" rel="noopener noreferrer">Track payout in Bradbury Explorer -&gt;</a>`
+      : "";
+    return `<article class="dashboard-bounty"><div class="bounty-card-top"><span class="bounty-status status-${statusLabel(task.status)}">${escapeHTML(displayStatus(task.status))}</span><span class="bounty-amount">${escapeHTML(formatAmount(task.bountyAmount))}</span></div><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(task.description)}</p><div class="task-meta"><span>Created ${escapeHTML(formatDate(task.createdAt))}</span><span>${task.claimedBy ? `Claimed by ${escapeHTML(shortWallet(task.claimedBy))}` : "Open to the marketplace"}</span></div><div class="task-meta"><span>${task.chain?.linked ? `Bradbury task #${escapeHTML(String(task.chain.taskId))}` : "Local record  -  not on-chain"}</span></div>${fundingLink || payoutLink ? `<div class="task-meta">${fundingLink}${payoutLink}</div>` : ""}${task.verification && task.chain?.linked ? `<div class="verification-note"><strong>GenLayer: ${escapeHTML(displayStatus(task.verification.verdict || "UNDER_REVIEW"))}</strong><span>${task.status === "UNDER_REVIEW" ? "Validators are evaluating the submission against your original instructions." : "Consensus verdict recorded on-chain."}</span></div>` : ""}</article>`;
+  }).join("");
 }
 
 async function loadTasks() {

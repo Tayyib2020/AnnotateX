@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
 const persistence = fs.readFileSync(path.join(__dirname, "..", "persistence.js"), "utf8");
+const clientDashboard = fs.readFileSync(path.join(__dirname, "..", "..", "annotatex-frontend", "dashboards", "client-dashboard.js"), "utf8");
 const contract = fs.readFileSync(path.join(__dirname, "..", "..", "annotatex-contract", "AnnotateXBounty.py"), "utf8");
 
 test("a non-empty submission cannot be approved or paid by Express", () => {
@@ -44,4 +45,11 @@ test("production uses durable PostgreSQL state and sessions", () => {
 test("submission preparation reads and saves the same marketplace", () => {
   assert.doesNotMatch(server, /findTask\(readMarketplace\(\), req\.params\.id\)/);
   assert.match(server, /const marketplace = await readMarketplace\(\);\s+const task = findTask\(marketplace, req\.params\.id\);/);
+});
+
+test("the client dashboard exposes real funding and payout Explorer links", () => {
+  assert.match(clientDashboard, /task\.chain\?\.fundingTransactionUrl/);
+  assert.match(clientDashboard, /task\.chain\?\.payoutTransactionUrl/);
+  assert.match(clientDashboard, /Track funding in Bradbury Explorer/);
+  assert.match(clientDashboard, /Track payout in Bradbury Explorer/);
 });
