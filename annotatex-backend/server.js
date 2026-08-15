@@ -1,11 +1,13 @@
 const express = require("express");
 const cors = require("cors");
-const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const session = require("express-session");
+const connectPgSimple = require("connect-pg-simple");
 const { ethers } = require("ethers");
 require("dotenv").config();
+
+const { createPersistence } = require("./persistence");
 
 const {
   prepareCreateTask,
@@ -24,10 +26,6 @@ const app = express();
 const PORT = Number(process.env.PORT || 4000);
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const FRONTEND_DIRECTORY = path.join(__dirname, "..", "annotatex-frontend");
-const DATA_DIRECTORY = path.resolve(process.env.ANNOTATEX_DATA_DIR || __dirname);
-fs.mkdirSync(DATA_DIRECTORY, { recursive: true });
-const USERS_FILE = path.join(DATA_DIRECTORY, "users.json");
-const MARKETPLACE_FILE = path.join(DATA_DIRECTORY, "marketplace.json");
 const configuredSessionSecret = process.env.SESSION_SECRET;
 if (IS_PRODUCTION && (!configuredSessionSecret || configuredSessionSecret.length < 32)) {
   throw new Error("SESSION_SECRET must be set to a long random value in production");
@@ -36,6 +34,13 @@ const SESSION_SECRET = configuredSessionSecret || crypto.randomBytes(48).toStrin
 const CONTRACT_CONFIGURED = Boolean(process.env.GENLAYER_CONTRACT && ethers.isAddress(process.env.GENLAYER_CONTRACT));
 if (IS_PRODUCTION && !CONTRACT_CONFIGURED) {
   throw new Error("GENLAYER_CONTRACT must be set to the deployed Bradbury AnnotateX contract in production");
+}
+const persistence = createPersistence({
+  dataDirectory: process.env.ANNOTATEX_DATA_DIR || __dirname,
+  importLocalData: process.env.DATABASE_IMPORT_LOCAL_DATA === "true",
+});
+if (IS_PRODUCTION && !persistence.usesDatabase) {
+  throw new Error("DATABASE_URL must be set to the production PostgreSQL database");
 }
 const pendingBountyPreparations = new Map();
 
@@ -66,6 +71,9 @@ app.use(express.json({ limit: "256kb" }));
 app.use(
   session({
     name: "annotatex.sid",
+    ...(persistence.pool
+      ? { store: new (connectPgSimple(session))({ pool: persistence.pool, tableName: "annotatex_sessions", createTableIfMissing: true }) }
+      : {}),
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -80,38 +88,20 @@ app.use(
 
 app.use(express.static(FRONTEND_DIRECTORY));
 
-function ensureJsonFile(file, fallback) {
-  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(fallback, null, 2));
-}
-
-function readJson(file, fallback) {
-  ensureJsonFile(file, fallback);
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (error) {
-    console.error(`Unable to read ${path.basename(file)}:`, error.message);
-    return fallback;
-  }
-}
-
-function writeJson(file, value) {
-  // The MVP store is deliberately tiny. A single synchronous write keeps
-  // updates ordered and works consistently on Windows and Unix hosts.
-  fs.writeFileSync(file, JSON.stringify(value, null, 2));
-}
-
 function readUsers() {
-  return readJson(USERS_FILE, []);
+  return persistence.getUsers();
+}
+
+function saveUsers(users) {
+  return persistence.saveUsers(users);
 }
 
 function readMarketplace() {
-  const marketplace = readJson(MARKETPLACE_FILE, { tasks: [] });
-  if (!Array.isArray(marketplace.tasks)) marketplace.tasks = [];
-  return marketplace;
+  return persistence.getMarketplace();
 }
 
 function saveMarketplace(marketplace) {
-  writeJson(MARKETPLACE_FILE, marketplace);
+  return persistence.saveMarketplace(marketplace);
 }
 
 function normalizeWallet(wallet) {
@@ -328,7 +318,7 @@ async function syncTaskFromGenLayer(task) {
 
 async function syncTasksFromGenLayer(tasks, marketplace = null) {
   await Promise.all(tasks.map((task) => syncTaskFromGenLayer(task)));
-  if (marketplace) saveMarketplace(marketplace);
+  if (marketplace) await saveMarketplace(marketplace);
   return tasks;
 }
 
@@ -373,9 +363,10 @@ function establishSession(req, user, callback) {
   });
 }
 
-function findUserByWallet(wallet) {
+async function findUserByWallet(wallet) {
   const normalizedWallet = normalizeWallet(wallet);
-  return readUsers().find((user) => normalizeWallet(user.wallet) === normalizedWallet);
+  const users = await readUsers();
+  return users.find((user) => normalizeWallet(user.wallet) === normalizedWallet);
 }
 
 function respondWithUser(req, res, user, status = 200) {
@@ -396,10 +387,10 @@ app.post("/api/auth/nonce", (req, res) => {
   }
 });
 
-app.post("/api/auth/verify", (req, res) => {
+app.post("/api/auth/verify", async (req, res) => {
   try {
     const wallet = verifySignature(req.body.wallet, req.body.signature);
-    const user = findUserByWallet(wallet);
+    const user = await findUserByWallet(wallet);
     if (user) return respondWithUser(req, res, user);
     return res.json({ success: true, registered: false, wallet });
   } catch (error) {
@@ -407,13 +398,13 @@ app.post("/api/auth/verify", (req, res) => {
   }
 });
 
-app.post("/api/auth/signup", (req, res) => {
+app.post("/api/auth/signup", async (req, res) => {
   try {
     const { username, wallet, role, signature } = req.body;
     const normalizedWallet = verifySignature(wallet, signature);
     const cleanUsername = validateUsername(username);
     const normalizedRole = validateRole(role);
-    const users = readUsers();
+    const users = await readUsers();
     if (users.some((user) => user.username.toLowerCase() === cleanUsername.toLowerCase())) {
       return errorResponse(res, 409, "Username is already taken");
     }
@@ -428,17 +419,17 @@ app.post("/api/auth/signup", (req, res) => {
       createdAt: new Date().toISOString(),
     };
     users.push(user);
-    writeJson(USERS_FILE, users);
+    await saveUsers(users);
     return respondWithUser(req, res, user, 201);
   } catch (error) {
     return errorResponse(res, 400, error.message);
   }
 });
 
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
     const normalizedWallet = verifySignature(req.body.wallet, req.body.signature);
-    const user = findUserByWallet(normalizedWallet);
+    const user = await findUserByWallet(normalizedWallet);
     if (!user) return errorResponse(res, 404, "No AnnotateX account is registered to this wallet");
     return respondWithUser(req, res, user);
   } catch (error) {
@@ -474,7 +465,7 @@ app.get("/api/config", (req, res) => {
 });
 
 async function visibleTasksForRequest(req) {
-  const marketplace = readMarketplace();
+  const marketplace = await readMarketplace();
   const viewer = req.session.user;
   if (viewer?.role === "client") {
     return syncTasksFromGenLayer(marketplace.tasks.filter((task) => isOnChainTask(task) && task.creatorWallet === normalizeWallet(viewer.wallet)), marketplace);
@@ -489,7 +480,7 @@ app.get("/api/tasks", async (req, res) => {
 });
 
 app.get("/api/tasks/available", async (req, res) => {
-  const marketplace = readMarketplace();
+  const marketplace = await readMarketplace();
   const tasks = (await syncTasksFromGenLayer(marketplace.tasks.filter(isOnChainTask), marketplace))
     .filter((task) => taskStatus(task) === "OPEN")
     .map((task) => taskForViewer(task, req.session.user));
@@ -498,7 +489,7 @@ app.get("/api/tasks/available", async (req, res) => {
 
 app.get("/api/tasks/mine", requireRole("client"), async (req, res) => {
   const wallet = normalizeWallet(req.session.user.wallet);
-  const marketplace = readMarketplace();
+  const marketplace = await readMarketplace();
   const tasks = (await syncTasksFromGenLayer(marketplace.tasks
     .filter((task) => isOnChainTask(task) && task.creatorWallet === wallet), marketplace
   )).map((task) => taskForViewer(task, req.session.user));
@@ -507,7 +498,7 @@ app.get("/api/tasks/mine", requireRole("client"), async (req, res) => {
 
 app.get("/api/tasks/work", requireRole("freelancer"), async (req, res) => {
   const wallet = normalizeWallet(req.session.user.wallet);
-  const marketplace = readMarketplace();
+  const marketplace = await readMarketplace();
   const tasks = (await syncTasksFromGenLayer(marketplace.tasks
     .filter((task) => isOnChainTask(task) && task.claimedBy === wallet), marketplace
   )).map((task) => taskForViewer(task, req.session.user));
@@ -515,11 +506,11 @@ app.get("/api/tasks/work", requireRole("freelancer"), async (req, res) => {
 });
 
 app.get("/api/tasks/:id", async (req, res) => {
-  const marketplace = readMarketplace();
+  const marketplace = await readMarketplace();
   const task = findTask(marketplace, req.params.id);
   if (!task) return errorResponse(res, 404, "Bounty not found");
   await syncTaskFromGenLayer(task);
-  saveMarketplace(marketplace);
+  await saveMarketplace(marketplace);
   const viewer = req.session.user;
   if (viewer?.role === "client" && task.creatorWallet !== normalizeWallet(viewer.wallet)) {
     return errorResponse(res, 403, "You can only view your own bounties");
@@ -557,7 +548,7 @@ app.post("/api/tasks/confirm", requireRole("client"), async (req, res) => {
       }
       pendingBountyPreparations.delete(`${normalizeWallet(req.session.user.wallet)}:${chainTaskId}`);
     }
-    const marketplace = readMarketplace();
+    const marketplace = await readMarketplace();
     if (txHash) {
       const existing = marketplace.tasks.find((task) => task.transactionHash === txHash);
       if (existing) return res.status(200).json({ success: true, task: taskForViewer(existing, req.session.user) });
@@ -585,7 +576,7 @@ app.post("/api/tasks/confirm", requireRole("client"), async (req, res) => {
       updatedAt: now,
     };
     marketplace.tasks.unshift(task);
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     return res.status(201).json({ success: true, task: taskForViewer(task, req.session.user) });
   } catch (error) {
     return errorResponse(res, 400, error.message || "Failed to save bounty");
@@ -594,11 +585,11 @@ app.post("/api/tasks/confirm", requireRole("client"), async (req, res) => {
 
 app.post("/api/tasks/:id/claim/prepare", requireRole("freelancer"), async (req, res) => {
   try {
-    const marketplace = readMarketplace();
+    const marketplace = await readMarketplace();
     const task = findTask(marketplace, req.params.id);
     if (!task) return errorResponse(res, 404, "Bounty not found");
     await syncTaskFromGenLayer(task);
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     if (taskStatus(task) !== "OPEN") return errorResponse(res, 409, "This bounty is no longer available");
     if (CONTRACT_CONFIGURED && (task.chainTaskId === null || task.chainTaskId === undefined)) return errorResponse(res, 503, "This bounty is not linked to a Bradbury Intelligent Contract task");
     const transaction = CONTRACT_CONFIGURED ? await prepareClaimTask(task.chainTaskId, req.session.user.wallet) : null;
@@ -609,11 +600,11 @@ app.post("/api/tasks/:id/claim/prepare", requireRole("freelancer"), async (req, 
 });
 
 app.post("/api/tasks/:id/claim", requireRole("freelancer"), async (req, res) => {
-  const marketplace = readMarketplace();
+  const marketplace = await readMarketplace();
   const task = findTask(marketplace, req.params.id);
   if (!task) return errorResponse(res, 404, "Bounty not found");
   await syncTaskFromGenLayer(task);
-  saveMarketplace(marketplace);
+  await saveMarketplace(marketplace);
   if (taskStatus(task) !== "OPEN") return errorResponse(res, 409, "This bounty has already been claimed");
   if (CONTRACT_CONFIGURED && !req.body.transactionHash) return errorResponse(res, 503, "The Bradbury claim transaction must be approved before recording the claim");
   const claimGenLayerTransactionHash = req.body.transactionHash ? await getGenLayerTransactionHash(String(req.body.transactionHash)) : null;
@@ -625,7 +616,7 @@ app.post("/api/tasks/:id/claim", requireRole("freelancer"), async (req, res) => 
   task.claimGenLayerTransactionHash = claimGenLayerTransactionHash;
   task.status = "CLAIMED";
   task.updatedAt = now;
-  saveMarketplace(marketplace);
+  await saveMarketplace(marketplace);
   return res.json({ success: true, task: taskForViewer(task, req.session.user) });
 });
 
@@ -633,11 +624,12 @@ app.post("/api/tasks/:id/submit/prepare", requireRole("freelancer"), async (req,
   try {
     const annotation = String(req.body.annotation || "").trim();
     if (annotation.length < 5 || annotation.length > 10000) return errorResponse(res, 400, "Submission must be between 5 and 10,000 characters");
-    const task = findTask(readMarketplace(), req.params.id);
+    const marketplace = await readMarketplace();
+    const task = findTask(marketplace, req.params.id);
     if (!task) return errorResponse(res, 404, "Bounty not found");
     if (task.claimedBy !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "You can only submit work for a bounty you claimed");
     await syncTaskFromGenLayer(task);
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     if (taskStatus(task) !== "CLAIMED") return errorResponse(res, 409, "This bounty is not ready for a new submission");
     if (!CONTRACT_CONFIGURED || task.chainTaskId === null || task.chainTaskId === undefined) return errorResponse(res, 503, "GenLayer Bradbury verification is not configured for this bounty");
     const transaction = await prepareSubmitAnnotation(task.chainTaskId, annotation, req.session.user.wallet);
@@ -655,7 +647,7 @@ app.post("/api/tasks/:id/submit", requireRole("freelancer"), async (req, res) =>
     if (!/^0x[a-fA-F0-9]{64}$/.test(String(req.body.transactionHash))) return errorResponse(res, 400, "Invalid submission transaction hash");
     const submissionGenLayerTransactionHash = await getGenLayerTransactionHash(String(req.body.transactionHash));
     if (!submissionGenLayerTransactionHash) return errorResponse(res, 502, "The submission transaction was not accepted by the Bradbury consensus contract. GenLayer review was not started.");
-    const marketplace = readMarketplace();
+    const marketplace = await readMarketplace();
     const task = findTask(marketplace, req.params.id);
     if (!task) return errorResponse(res, 404, "Bounty not found");
     if (task.claimedBy !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "You can only submit work for a bounty you claimed");
@@ -667,7 +659,7 @@ app.post("/api/tasks/:id/submit", requireRole("freelancer"), async (req, res) =>
     task.updatedAt = now;
     task.verification = { status: "pending", provider: "genlayer-bradbury", verdict: "UNDER_REVIEW", checkedAt: null };
     task.payout = { ...(task.payout || {}), status: "escrowed", onChain: false, transactionHash: null, paidAt: null };
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     return res.json({ success: true, message: "Submission recorded. GenLayer validators are reviewing it.", task: taskForViewer(task, req.session.user) });
   } catch (error) {
     return errorResponse(res, 400, error.message || "Failed to submit work");
@@ -676,14 +668,14 @@ app.post("/api/tasks/:id/submit", requireRole("freelancer"), async (req, res) =>
 
 app.get("/api/tasks/:id/verification", requireAuth, async (req, res) => {
   try {
-    const marketplace = readMarketplace();
+    const marketplace = await readMarketplace();
     const task = findTask(marketplace, req.params.id);
     if (!task) return errorResponse(res, 404, "Bounty not found");
     const wallet = normalizeWallet(req.session.user.wallet);
     if (req.session.user.role === "client" && task.creatorWallet !== wallet) return errorResponse(res, 403, "You can only view your own bounties");
     if (req.session.user.role === "freelancer" && task.claimedBy !== wallet) return errorResponse(res, 403, "You can only view your claimed work");
     await syncTaskFromGenLayer(task);
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     return res.json({ success: true, task: taskForViewer(task, req.session.user) });
   } catch (error) {
     return errorResponse(res, 503, error.message || "GenLayer verification is unavailable");
@@ -696,12 +688,12 @@ app.post("/api/tasks/:id/verify", requireRole("client"), (req, res) =>
 
 app.post("/api/tasks/:id/reward/prepare", requireRole("freelancer"), async (req, res) => {
   try {
-    const marketplace = readMarketplace();
+    const marketplace = await readMarketplace();
     const task = findTask(marketplace, req.params.id);
     if (!task) return errorResponse(res, 404, "Bounty not found");
     if (task.claimedBy !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "Only the assigned freelancer can claim this reward");
     await syncTaskFromGenLayer(task);
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     if (taskStatus(task) !== "APPROVED") return errorResponse(res, 409, "Reward is unavailable until GenLayer approves the submission");
     if (!CONTRACT_CONFIGURED || task.chainTaskId === null || task.chainTaskId === undefined) return errorResponse(res, 503, "This bounty is not linked to a Bradbury Intelligent Contract task");
     return res.json({ success: true, transaction: await prepareClaimReward(task.chainTaskId, req.session.user.wallet) });
@@ -716,15 +708,15 @@ app.post("/api/tasks/:id/reward/confirm", requireRole("freelancer"), async (req,
     if (!/^0x[a-fA-F0-9]{64}$/.test(hash)) return errorResponse(res, 400, "A valid reward transaction hash is required");
     const payoutGenLayerTransactionHash = await getGenLayerTransactionHash(hash);
     if (!payoutGenLayerTransactionHash) return errorResponse(res, 502, "The payout transaction was not accepted by the Bradbury consensus contract. No payout transaction was created.");
-    const marketplace = readMarketplace();
+    const marketplace = await readMarketplace();
     const task = findTask(marketplace, req.params.id);
     if (!task) return errorResponse(res, 404, "Bounty not found");
     if (task.claimedBy !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "Only the assigned freelancer can claim this reward");
     task.payout = { ...(task.payout || {}), status: "pending", transactionHash: hash, genlayerTransactionHash: payoutGenLayerTransactionHash, onChain: false, paidAt: null };
     task.updatedAt = new Date().toISOString();
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     await syncTaskFromGenLayer(task);
-    saveMarketplace(marketplace);
+    await saveMarketplace(marketplace);
     return res.json({ success: true, task: taskForViewer(task, req.session.user) });
   } catch (error) {
     return errorResponse(res, 400, error.message || "Failed to record reward transaction");
@@ -737,9 +729,14 @@ app.use((error, req, res, next) => {
   return errorResponse(res, 500, "Unexpected server error");
 });
 
-ensureJsonFile(USERS_FILE, []);
-ensureJsonFile(MARKETPLACE_FILE, { tasks: [] });
+async function start() {
+  await persistence.init();
+  app.listen(PORT, () => {
+    console.log(`AnnotateX backend listening on port ${PORT}`);
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`AnnotateX backend listening on port ${PORT}`);
+start().catch((error) => {
+  console.error("Unable to initialize AnnotateX persistence:", error);
+  process.exitCode = 1;
 });

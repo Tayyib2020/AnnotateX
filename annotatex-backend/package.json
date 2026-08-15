@@ -17,11 +17,13 @@
   },
   "type": "commonjs",
   "dependencies": {
+    "connect-pg-simple": "^10.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "ethers": "^6.17.0",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
-    "genlayer-js": "^1.1.8"
+    "genlayer-js": "^1.1.8",
+    "pg": "^8.23.0"
   }
 }
