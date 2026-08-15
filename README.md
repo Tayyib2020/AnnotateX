@@ -161,11 +161,11 @@ Render with a persistent disk or Fly.io with a mounted volume are suitable for t
 ## GenLayer Builders Program submission checklist
 
 - [x] Deploy the backend and publish the live Render URL.
-- [ ] Configure production environment variables in the hosting provider.
+- [x] Configure production environment variables in the hosting provider.
 - [x] Deploy the AnnotateX Intelligent Contract on GenLayer Bradbury Testnet.
 - [x] Connect the production application to the deployed Bradbury contract.
-- [ ] Run a fresh Bradbury end-to-end test with separate client and freelancer wallets.
 - [x] Capture the funding, claim, submission/consensus, and payout Explorer links.
 - [x] Add the live URL above.
 - [ ] Optionally add screenshots or a product walkthrough; neither is required for the application to be functional or for this README to document the deployed project.
-- [ ] Submit the public GitHub repository and this README.
+- [x] Run a fresh Bradbury end-to-end test with separate client and freelancer wallets.
+- [x] Submit the public GitHub repository and this README.
