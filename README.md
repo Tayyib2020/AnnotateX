@@ -154,7 +154,7 @@ Render with a persistent disk or Fly.io with a mounted volume are suitable for t
 
 - Live demo: **to be deployed**
 - Product walkthrough: **to be recorded**
-- Screenshots: **to be added before Builders Program submission**
+- Screenshots: **to be added soon**
 
 ## GenLayer Builders Program submission checklist
 
