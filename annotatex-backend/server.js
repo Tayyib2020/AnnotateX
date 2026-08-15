@@ -326,8 +326,9 @@ async function syncTaskFromGenLayer(task) {
   }
 }
 
-async function syncTasksFromGenLayer(tasks) {
+async function syncTasksFromGenLayer(tasks, marketplace = null) {
   await Promise.all(tasks.map((task) => syncTaskFromGenLayer(task)));
+  if (marketplace) saveMarketplace(marketplace);
   return tasks;
 }
 
@@ -476,9 +477,9 @@ async function visibleTasksForRequest(req) {
   const marketplace = readMarketplace();
   const viewer = req.session.user;
   if (viewer?.role === "client") {
-    return syncTasksFromGenLayer(marketplace.tasks.filter((task) => isOnChainTask(task) && task.creatorWallet === normalizeWallet(viewer.wallet)));
+    return syncTasksFromGenLayer(marketplace.tasks.filter((task) => isOnChainTask(task) && task.creatorWallet === normalizeWallet(viewer.wallet)), marketplace);
   }
-  if (viewer?.role === "freelancer") return syncTasksFromGenLayer(marketplace.tasks.filter(isOnChainTask));
+  if (viewer?.role === "freelancer") return syncTasksFromGenLayer(marketplace.tasks.filter(isOnChainTask), marketplace);
   return marketplace.tasks.filter((task) => isOnChainTask(task) && taskStatus(task) === "OPEN");
 }
 
@@ -489,7 +490,7 @@ app.get("/api/tasks", async (req, res) => {
 
 app.get("/api/tasks/available", async (req, res) => {
   const marketplace = readMarketplace();
-  const tasks = (await syncTasksFromGenLayer(marketplace.tasks.filter(isOnChainTask)))
+  const tasks = (await syncTasksFromGenLayer(marketplace.tasks.filter(isOnChainTask), marketplace))
     .filter((task) => taskStatus(task) === "OPEN")
     .map((task) => taskForViewer(task, req.session.user));
   return res.json({ success: true, count: tasks.length, tasks });
@@ -499,7 +500,7 @@ app.get("/api/tasks/mine", requireRole("client"), async (req, res) => {
   const wallet = normalizeWallet(req.session.user.wallet);
   const marketplace = readMarketplace();
   const tasks = (await syncTasksFromGenLayer(marketplace.tasks
-    .filter((task) => isOnChainTask(task) && task.creatorWallet === wallet)
+    .filter((task) => isOnChainTask(task) && task.creatorWallet === wallet), marketplace
   )).map((task) => taskForViewer(task, req.session.user));
   return res.json({ success: true, count: tasks.length, tasks });
 });
@@ -508,7 +509,7 @@ app.get("/api/tasks/work", requireRole("freelancer"), async (req, res) => {
   const wallet = normalizeWallet(req.session.user.wallet);
   const marketplace = readMarketplace();
   const tasks = (await syncTasksFromGenLayer(marketplace.tasks
-    .filter((task) => isOnChainTask(task) && task.claimedBy === wallet)
+    .filter((task) => isOnChainTask(task) && task.claimedBy === wallet), marketplace
   )).map((task) => taskForViewer(task, req.session.user));
   return res.json({ success: true, count: tasks.length, tasks });
 });
@@ -518,6 +519,7 @@ app.get("/api/tasks/:id", async (req, res) => {
   const task = findTask(marketplace, req.params.id);
   if (!task) return errorResponse(res, 404, "Bounty not found");
   await syncTaskFromGenLayer(task);
+  saveMarketplace(marketplace);
   const viewer = req.session.user;
   if (viewer?.role === "client" && task.creatorWallet !== normalizeWallet(viewer.wallet)) {
     return errorResponse(res, 403, "You can only view your own bounties");
@@ -596,6 +598,7 @@ app.post("/api/tasks/:id/claim/prepare", requireRole("freelancer"), async (req, 
     const task = findTask(marketplace, req.params.id);
     if (!task) return errorResponse(res, 404, "Bounty not found");
     await syncTaskFromGenLayer(task);
+    saveMarketplace(marketplace);
     if (taskStatus(task) !== "OPEN") return errorResponse(res, 409, "This bounty is no longer available");
     if (CONTRACT_CONFIGURED && (task.chainTaskId === null || task.chainTaskId === undefined)) return errorResponse(res, 503, "This bounty is not linked to a Bradbury Intelligent Contract task");
     const transaction = CONTRACT_CONFIGURED ? await prepareClaimTask(task.chainTaskId, req.session.user.wallet) : null;
@@ -610,6 +613,7 @@ app.post("/api/tasks/:id/claim", requireRole("freelancer"), async (req, res) => 
   const task = findTask(marketplace, req.params.id);
   if (!task) return errorResponse(res, 404, "Bounty not found");
   await syncTaskFromGenLayer(task);
+  saveMarketplace(marketplace);
   if (taskStatus(task) !== "OPEN") return errorResponse(res, 409, "This bounty has already been claimed");
   if (CONTRACT_CONFIGURED && !req.body.transactionHash) return errorResponse(res, 503, "The Bradbury claim transaction must be approved before recording the claim");
   const claimGenLayerTransactionHash = req.body.transactionHash ? await getGenLayerTransactionHash(String(req.body.transactionHash)) : null;
@@ -633,6 +637,7 @@ app.post("/api/tasks/:id/submit/prepare", requireRole("freelancer"), async (req,
     if (!task) return errorResponse(res, 404, "Bounty not found");
     if (task.claimedBy !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "You can only submit work for a bounty you claimed");
     await syncTaskFromGenLayer(task);
+    saveMarketplace(marketplace);
     if (taskStatus(task) !== "CLAIMED") return errorResponse(res, 409, "This bounty is not ready for a new submission");
     if (!CONTRACT_CONFIGURED || task.chainTaskId === null || task.chainTaskId === undefined) return errorResponse(res, 503, "GenLayer Bradbury verification is not configured for this bounty");
     const transaction = await prepareSubmitAnnotation(task.chainTaskId, annotation, req.session.user.wallet);
@@ -696,6 +701,7 @@ app.post("/api/tasks/:id/reward/prepare", requireRole("freelancer"), async (req,
     if (!task) return errorResponse(res, 404, "Bounty not found");
     if (task.claimedBy !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "Only the assigned freelancer can claim this reward");
     await syncTaskFromGenLayer(task);
+    saveMarketplace(marketplace);
     if (taskStatus(task) !== "APPROVED") return errorResponse(res, 409, "Reward is unavailable until GenLayer approves the submission");
     if (!CONTRACT_CONFIGURED || task.chainTaskId === null || task.chainTaskId === undefined) return errorResponse(res, 503, "This bounty is not linked to a Bradbury Intelligent Contract task");
     return res.json({ success: true, transaction: await prepareClaimReward(task.chainTaskId, req.session.user.wallet) });

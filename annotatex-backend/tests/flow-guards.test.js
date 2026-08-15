@@ -24,3 +24,10 @@ test("the contract separates evaluation from payout", () => {
   assert.match(contract.slice(rewardStart), /task\.verdict != "APPROVED"/);
   assert.match(contract.slice(rewardStart), /task\.paid/);
 });
+
+test("read paths persist finalized GenLayer state", () => {
+  assert.match(server, /async function syncTasksFromGenLayer\(tasks, marketplace = null\)/);
+  assert.match(server, /if \(marketplace\) saveMarketplace\(marketplace\);/);
+  assert.match(server, /app\.get\("\/api\/tasks\/work"[\s\S]*?syncTasksFromGenLayer\(marketplace\.tasks[\s\S]*?marketplace\s*\)/);
+  assert.match(server, /app\.get\("\/api\/tasks\/:id"[\s\S]*?await syncTaskFromGenLayer\(task\);\s+saveMarketplace\(marketplace\);/);
+});
