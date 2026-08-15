@@ -30,6 +30,9 @@ async function getSubmission(taskId) { return read("get_submission", taskId); }
 async function getWorker(taskId) { return read("get_worker", taskId); }
 async function isClaimed(taskId) { return read("is_claimed", taskId); }
 async function isPaid(taskId) { return read("is_paid", taskId); }
+async function isRefunded(taskId) { return read("is_refunded", taskId); }
+async function getDeadline(taskId) { return read("get_deadline", taskId); }
+async function canRecover(taskId) { return read("can_recover", taskId); }
 async function getPayoutStatus(taskId) { return read("get_payout_status", taskId); }
 
 function encodeConsensusTransaction(sender, functionName, args, value = 0n) {
@@ -79,6 +82,10 @@ async function prepareClaimReward(taskId, sender) {
   return encodeConsensusTransaction(sender, "claim_reward", [BigInt(taskId)]);
 }
 
+async function prepareRecoverBounty(taskId, sender) {
+  return encodeConsensusTransaction(sender, "recover_bounty", [BigInt(taskId)]);
+}
+
 async function getGenLayerTransactionHash(evmTransactionHash) {
   if (!/^0x[a-fA-F0-9]{64}$/.test(String(evmTransactionHash || ""))) return null;
   const receipt = await client.request({ method: "eth_getTransactionReceipt", params: [evmTransactionHash] });
@@ -101,10 +108,14 @@ module.exports = {
   getWorker,
   isClaimed,
   isPaid,
+  isRefunded,
+  getDeadline,
+  canRecover,
   getPayoutStatus,
   prepareCreateTask,
   prepareSubmitAnnotation,
   prepareClaimTask,
   prepareClaimReward,
+  prepareRecoverBounty,
   getGenLayerTransactionHash,
 };

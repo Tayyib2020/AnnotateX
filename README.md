@@ -1,6 +1,6 @@
 # AnnotateX
 
-AnnotateX is a decentralized marketplace for AI and data annotation work. Clients create and fund bounties, freelancers complete them, and a GenLayer Intelligent Contract evaluates submitted work before a reward becomes claimable.
+AnnotateX is a decentralized marketplace for AI and data annotation work. Clients create and fund bounties, freelancers complete them, and a GenLayer Intelligent Contract evaluates submitted work before a reward becomes claimable. Rejected or abandoned escrow can be recovered by the original client under contract-enforced rules.
 
 ## What problem it solves
 
@@ -8,7 +8,7 @@ Annotation marketplaces often rely on opaque review workflows and centralized pa
 
 ## Why GenLayer is necessary
 
-The quality decision is not made by the Express server or a browser-side JavaScript shortcut. The deployed Intelligent Contract compares the freelancer submission with the original client instructions using GenLayer's non-deterministic AI evaluation and Equivalence Principle. Validator consensus stores `APPROVED` or `REJECTED` on-chain. Only `APPROVED` work can call the payout function.
+The quality decision is not made by the Express server or a browser-side JavaScript shortcut. The deployed Intelligent Contract independently evaluates the freelancer submission and original client instructions in a nondeterministic leader/validator Equivalence-Principle path. Validator consensus stores `APPROVED` or `REJECTED` on-chain. Only an on-chain `APPROVED` verdict can call the payout function.
 
 ## Product flow
 
@@ -17,7 +17,7 @@ The quality decision is not made by the Express server or a browser-side JavaScr
 1. Connect a wallet on GenLayer Bradbury Testnet.
 2. Create a bounty with task instructions and a GEN amount.
 3. Approve the Bradbury consensus transaction in the wallet.
-4. Monitor the bounty as `OPEN`, `CLAIMED`, `UNDER REVIEW`, `APPROVED`, `REJECTED`, or `PAID`.
+4. Monitor the bounty as `ACTIVE`, `SUBMITTED/PENDING VALIDATION`, `APPROVED`, `REJECTED`, `PAID`, or `REFUNDED`; recover eligible escrow from the client dashboard.
 
 ### Freelancer
 
@@ -29,7 +29,7 @@ The quality decision is not made by the Express server or a browser-side JavaScr
 
 ### GenLayer verification and payout
 
-`submit_annotation(task_id, annotation)` evaluates the stored original instructions and the submitted work. The contract stores the canonical verdict after consensus. `claim_reward(task_id)` is the only payout path and requires the assigned worker, a submitted task, `APPROVED`, and an unpaid bounty.
+`submit_annotation(task_id, annotation)` independently evaluates the stored original instructions and submitted work on the leader and validators. The contract stores the consensus result only after the verdict field agrees. `claim_reward(task_id)` is the only worker payout path and requires the assigned worker, a submitted task, `APPROVED`, and an unpaid/unrefunded bounty. `recover_bounty(task_id)` can refund the creator after rejection or a safe deadline, with double payout/refund prevented on-chain.
 
 ## Architecture
 
@@ -66,7 +66,7 @@ The browser approves wallet transactions. The backend prepares calldata, enforce
 - Chain ID: `4221` (`0x107d`)
 - GenLayer RPC: `https://rpc-bradbury.genlayer.com`
 - Explorer: `https://explorer-bradbury.genlayer.com/`
-- Current deployed AnnotateX contract: `0x63E06B5a9200d737ED6148607110B64356220015`
+- Existing deployed AnnotateX contract: `0x63E06B5a9200d737ED6148607110B64356220015` (legacy build; redeploy this updated contract before using recovery)
 - Consensus main contract used for Intelligent Contract transactions: `0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D`
 
 The contract address is public configuration, not a secret. The production deployment is configured to use this Bradbury contract; verify it when configuring another environment.
@@ -109,7 +109,7 @@ Use [`.env.example`](.env.example) or [`annotatex-backend/.env.example`](annotat
 - `PORT`: hosting provider port, default `4000`
 - `FRONTEND_ORIGINS`: comma-separated allowed browser origins; required in production
 - `SESSION_SECRET`: long random session secret; required in production
-- `GENLAYER_CONTRACT`: deployed Bradbury contract address; required in production
+- `GENLAYER_CONTRACT`: address of the newly deployed updated Bradbury contract; required in production
 - `GENLAYER_CHAIN_ID`: `0x107d`
 - `GENLAYER_RPC_URL`: Bradbury RPC URL used for deployment/configuration documentation
 - `GENLAYER_EXPLORER_URL`: Bradbury Explorer base URL
@@ -151,6 +151,7 @@ Render with a persistent disk or Fly.io with a mounted volume are suitable for t
 - The landing page contains clearly labeled static marketplace preview cards; dashboard counts and earnings are data-driven.
 - The contract and UI support one submission per bounty and one payout per approved bounty.
 - Contract consensus can take time or return an undetermined/error result; the UI exposes pending/error states and Explorer links where a real GenLayer transaction exists.
+- A contract upgrade is not automatic; existing funds/tasks remain governed by the legacy deployed address until a new contract is deployed and configured.
 
 ## Demo and screenshots
 

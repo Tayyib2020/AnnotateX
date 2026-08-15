@@ -30,7 +30,7 @@ function renderStats() {
 }
 
 function taskCard(task, action) {
-  return `<article class="available-bounty"><div class="bounty-card-top"><span class="bounty-status status-${statusLabel(task.status)}">${escapeHTML(task.status)}</span><span class="bounty-amount">${escapeHTML(formatAmount(task.bountyAmount))}</span></div><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(task.description)}</p><div class="task-meta"><span>Client ${escapeHTML(shortWallet(task.creatorWallet))}</span><span>Posted ${escapeHTML(formatDate(task.createdAt))}</span></div>${action}</article>`;
+  return `<article class="available-bounty"><div class="bounty-card-top"><span class="bounty-status status-${statusLabel(task.state || task.status)}">${escapeHTML(displayStatus(task.state || task.status))}</span><span class="bounty-amount">${escapeHTML(formatAmount(task.bountyAmount))}</span></div><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(task.description)}</p><div class="task-meta"><span>Client ${escapeHTML(shortWallet(task.creatorWallet))}</span><span>Posted ${escapeHTML(formatDate(task.createdAt))}</span></div>${action}</article>`;
 }
 
 function renderAvailable() {
@@ -47,10 +47,11 @@ function workAction(task) {
     const explorerLink = task.chain.submissionTransactionUrl
       ? `<a class="explorer-link" href="${escapeHTML(task.chain.submissionTransactionUrl)}" target="_blank" rel="noopener noreferrer">Track consensus in Bradbury Explorer -&gt;</a>`
       : "";
-    return `<div class="work-result">Verifying with GenLayer...${explorerLink}</div>`;
+    return `<div class="work-result">Submitted / pending validation with GenLayer...${explorerLink}</div>`;
   }
   if (task.status === "APPROVED") return `<button class="dashboard-button primary reward-button" type="button" data-id="${escapeHTML(task.id)}">Claim reward</button>`;
-  if (task.status === "REJECTED") return `<div class="work-result">Rejected by GenLayer - no reward</div>`;
+  if (task.status === "REJECTED") return `<div class="work-result">Rejected by GenLayer - no reward. The client can recover the escrow.</div>`;
+  if (task.status === "REFUNDED") return `<div class="work-result">Bounty refunded to the client</div>`;
   if (task.status === "PAID") return `<div class="work-result">Reward paid</div>`;
   return `<div class="work-result">Awaiting on-chain state</div>`;
 }
@@ -58,7 +59,7 @@ function workAction(task) {
 function renderWork() {
   const list = $("#work-list");
   if (!work.length) { list.innerHTML = `<div class="dashboard-empty"><h3>Your work queue is empty.</h3><p>Claim an available bounty and it will show up here with a private submission form.</p></div>`; return; }
-  list.innerHTML = work.map((task) => `<article class="work-item"><div><span class="bounty-status status-${statusLabel(task.status)}">${escapeHTML(displayStatus(task.status))}</span><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(formatAmount(task.bountyAmount))}  -  Claimed ${escapeHTML(formatDate(task.claimedAt))}</p><small>${task.chain?.linked ? `Bradbury task #${escapeHTML(String(task.chain.taskId))}` : "Local record  -  not on-chain"}</small>${task.verification?.verdict && task.chain?.linked ? `<small>${escapeHTML(displayStatus(task.verification.verdict))}</small>` : ""}</div>${workAction(task)}</article>`).join("");
+  list.innerHTML = work.map((task) => `<article class="work-item"><div><span class="bounty-status status-${statusLabel(task.state || task.status)}">${escapeHTML(displayStatus(task.state || task.status))}</span><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(formatAmount(task.bountyAmount))}  -  Claimed ${escapeHTML(formatDate(task.claimedAt))}</p><small>${task.chain?.linked ? `Bradbury task #${escapeHTML(String(task.chain.taskId))}` : "Local record  -  not on-chain"}</small>${task.verification?.verdict && task.chain?.linked ? `<small>GenLayer verdict: ${escapeHTML(displayStatus(task.verification.verdict))}</small>` : ""}${task.payout?.status === "claimable" ? "<small>Payout: CLAIMABLE</small>" : ""}</div>${workAction(task)}</article>`).join("");
   list.querySelectorAll(".submit-button").forEach((button) => button.addEventListener("click", () => openSubmitForm(button.dataset.id)));
   list.querySelectorAll(".reward-button").forEach((button) => button.addEventListener("click", () => claimReward(button.dataset.id, button)));
 }

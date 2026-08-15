@@ -20,11 +20,17 @@ test("the contract separates evaluation from payout", () => {
   const rewardStart = contract.indexOf("def claim_reward");
   assert.ok(submitStart >= 0 && rewardStart > submitStart);
   const submissionSection = contract.slice(submitStart, rewardStart);
-  assert.match(submissionSection, /prompt_non_comparative/);
+  assert.match(submissionSection, /run_nondet_unsafe/);
+  assert.match(submissionSection, /def validator_accepts/);
+  assert.match(submissionSection, /leader_data\.get\("verdict"\)/);
   assert.match(submissionSection, /task\.verdict = verdict/);
   assert.doesNotMatch(submissionSection, /emit_transfer/);
   assert.match(contract.slice(rewardStart), /task\.verdict != "APPROVED"/);
   assert.match(contract.slice(rewardStart), /task\.paid/);
+  assert.match(contract, /def recover_bounty/);
+  assert.match(contract, /Only the task creator can recover the bounty/);
+  assert.match(contract, /task\.verdict == "REJECTED" or self\._now\(\) > task\.deadline/);
+  assert.match(contract, /task\.refunded/);
 });
 
 test("read paths persist finalized GenLayer state", () => {
@@ -52,4 +58,6 @@ test("the client dashboard exposes real funding and payout Explorer links", () =
   assert.match(clientDashboard, /task\.chain\?\.payoutTransactionUrl/);
   assert.match(clientDashboard, /Track funding in Bradbury Explorer/);
   assert.match(clientDashboard, /Track payout in Bradbury Explorer/);
+  assert.match(clientDashboard, /recoveryTransactionUrl/);
+  assert.match(clientDashboard, /recovery\/prepare/);
 });

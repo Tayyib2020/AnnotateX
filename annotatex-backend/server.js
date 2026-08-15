@@ -14,9 +14,14 @@ const {
   prepareClaimTask,
   prepareSubmitAnnotation,
   prepareClaimReward,
+  prepareRecoverBounty,
   getTaskCount,
   getVerdict,
+  getPayoutStatus,
   isPaid,
+  isRefunded,
+  getDeadline,
+  canRecover,
   isClaimed,
   getWorker,
   getGenLayerTransactionHash,
@@ -32,6 +37,7 @@ if (IS_PRODUCTION && (!configuredSessionSecret || configuredSessionSecret.length
 }
 const SESSION_SECRET = configuredSessionSecret || crypto.randomBytes(48).toString("hex");
 const CONTRACT_CONFIGURED = Boolean(process.env.GENLAYER_CONTRACT && ethers.isAddress(process.env.GENLAYER_CONTRACT));
+const LEGACY_CONTRACT_ADDRESS = "0x63E06B5a9200d737ED6148607110B64356220015".toLowerCase();
 if (IS_PRODUCTION && !CONTRACT_CONFIGURED) {
   throw new Error("GENLAYER_CONTRACT must be set to the deployed Bradbury AnnotateX contract in production");
 }
@@ -172,8 +178,10 @@ function explorerTransactionUrl(hash) {
 }
 
 function isOnChainTask(task) {
+  const taskContractAddress = task.contractAddress || LEGACY_CONTRACT_ADDRESS;
   return Boolean(
     CONTRACT_CONFIGURED
+    && normalizeWallet(taskContractAddress) === normalizeWallet(process.env.GENLAYER_CONTRACT)
     && /^\d+$/.test(String(task.chainTaskId ?? ""))
     && task.genlayerTransactionHash
   );
@@ -184,12 +192,25 @@ function taskStatus(task) {
   const verdict = String(task.verification?.verdict || task.verdict || "").toUpperCase();
   const onChainVerification = task.verification?.provider === "genlayer-bradbury";
   const onChainPaid = task.payout?.onChain === true && task.payout?.status === "paid";
+  const onChainRefunded = task.payout?.onChain === true && task.payout?.status === "refunded";
+  if (onChainRefunded) return "REFUNDED";
   if (onChainPaid) return "PAID";
   if (onChainVerification && verdict === "APPROVED") return "APPROVED";
   if (onChainVerification && verdict === "REJECTED") return "REJECTED";
   if (task.submission || task.status === "SUBMITTED" || task.status === "UNDER_REVIEW") return "UNDER_REVIEW";
   if (task.claimedBy || task.status === "CLAIMED") return "CLAIMED";
   return "OPEN";
+}
+
+function taskState(task) {
+  if (!isOnChainTask(task)) return "LOCAL";
+  const status = taskStatus(task);
+  if (status === "PAID") return "PAID";
+  if (status === "REFUNDED") return "REFUNDED";
+  if (status === "APPROVED") return "APPROVED";
+  if (status === "REJECTED") return "REJECTED";
+  if (status === "UNDER_REVIEW") return "SUBMITTED/PENDING VALIDATION";
+  return "ACTIVE";
 }
 
 function taskForViewer(task, viewer) {
@@ -213,6 +234,7 @@ function taskForViewer(task, viewer) {
     bountyAmount: task.bountyAmount,
     asset: task.asset,
     status: taskStatus(task),
+    state: taskState(task),
     claimedBy: task.claimedBy,
     claimedAt: task.claimedAt,
     submittedAt: task.submittedAt,
@@ -229,8 +251,14 @@ function taskForViewer(task, viewer) {
         claimTransactionUrl: (isOwner || isWorker) ? explorerTransactionUrl(task.claimGenLayerTransactionHash) : null,
         submissionTransactionUrl: (isOwner || isWorker) ? explorerTransactionUrl(task.submission?.genlayerTransactionHash) : null,
         payoutTransactionUrl: (isOwner || isWorker) ? explorerTransactionUrl(task.payout?.genlayerTransactionHash) : null,
+        recoveryTransactionUrl: isOwner ? explorerTransactionUrl(task.recovery?.genlayerTransactionHash) : null,
       },
     payout: trustedPayout,
+    recovery: {
+      eligible: task.recoveryEligible === true,
+      deadline: task.recoveryDeadline || null,
+      pending: task.recovery?.status === "pending",
+    },
     verification: trustedVerification,
     canManage: Boolean(isOwner),
     canWork: Boolean(isWorker),
@@ -271,15 +299,21 @@ async function syncTaskFromGenLayer(task) {
   if (!isOnChainTask(task)) return false;
   try {
     await syncTaskTransactionReferences(task);
-    const [rawVerdict, paid, claimed, worker] = await Promise.all([
+    const [rawVerdict, payoutStatus, paid, refunded, claimed, worker, deadline, recoveryEligible] = await Promise.all([
       getVerdict(task.chainTaskId),
+      getPayoutStatus(task.chainTaskId),
       isPaid(task.chainTaskId),
+      isRefunded(task.chainTaskId),
       isClaimed(task.chainTaskId),
       getWorker(task.chainTaskId),
+      getDeadline(task.chainTaskId),
+      canRecover(task.chainTaskId),
     ]);
     const verdict = String(rawVerdict || "").trim().toUpperCase();
     const workerAddress = String(worker || "").trim();
     if (workerAddress && workerAddress.toLowerCase() !== ethers.ZeroAddress.toLowerCase()) task.claimedBy = normalizeWallet(workerAddress);
+    task.recoveryDeadline = String(deadline || "");
+    task.recoveryEligible = Boolean(recoveryEligible);
     const checkedAt = new Date().toISOString();
     if (task.submission || verdict === "APPROVED" || verdict === "REJECTED") {
       task.verification = {
@@ -291,12 +325,15 @@ async function syncTaskFromGenLayer(task) {
     } else {
       task.verification = null;
     }
+    const normalizedPayoutStatus = String(payoutStatus || "UNAVAILABLE").trim().toUpperCase();
     task.payout = {
       ...(task.payout || {}),
-      status: paid ? "paid" : verdict === "APPROVED" ? "claimable" : "escrowed",
-      onChain: Boolean(paid),
+      status: paid ? "paid" : refunded ? "refunded" : verdict === "APPROVED" ? "claimable" : normalizedPayoutStatus === "REJECTED" ? "rejected" : "escrowed",
+      onChain: Boolean(paid || refunded),
       paidAt: paid ? (task.payout?.paidAt || checkedAt) : null,
+      refundedAt: refunded ? (task.payout?.refundedAt || checkedAt) : null,
     };
+    task.refunded = Boolean(refunded);
     task.status = paid
       ? "PAID"
       : verdict === "APPROVED"
@@ -557,6 +594,7 @@ app.post("/api/tasks/confirm", requireRole("client"), async (req, res) => {
     const task = {
       id: crypto.randomUUID(),
       chainTaskId: req.body.chainTaskId ?? null,
+      contractAddress: CONTRACT_CONFIGURED ? normalizeWallet(process.env.GENLAYER_CONTRACT) : null,
       title: String(req.body.title || description.split(/[.!?]/)[0]).trim().slice(0, 90),
       description,
       bountyAmount: amount,
@@ -720,6 +758,45 @@ app.post("/api/tasks/:id/reward/confirm", requireRole("freelancer"), async (req,
     return res.json({ success: true, task: taskForViewer(task, req.session.user) });
   } catch (error) {
     return errorResponse(res, 400, error.message || "Failed to record reward transaction");
+  }
+});
+
+app.post("/api/tasks/:id/recovery/prepare", requireRole("client"), async (req, res) => {
+  try {
+    const marketplace = await readMarketplace();
+    const task = findTask(marketplace, req.params.id);
+    if (!task) return errorResponse(res, 404, "Bounty not found");
+    if (task.creatorWallet !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "Only the task creator can recover this bounty");
+    await syncTaskFromGenLayer(task);
+    await saveMarketplace(marketplace);
+    if (!task.recoveryEligible) return errorResponse(res, 409, "This bounty is not yet eligible for recovery");
+    if (!CONTRACT_CONFIGURED || task.chainTaskId === null || task.chainTaskId === undefined) return errorResponse(res, 503, "This bounty is not linked to a Bradbury Intelligent Contract task");
+    return res.json({ success: true, transaction: await prepareRecoverBounty(task.chainTaskId, req.session.user.wallet) });
+  } catch (error) {
+    return errorResponse(res, 400, error.message || "Failed to prepare bounty recovery");
+  }
+});
+
+app.post("/api/tasks/:id/recovery/confirm", requireRole("client"), async (req, res) => {
+  try {
+    const hash = String(req.body.transactionHash || "");
+    if (!/^0x[a-fA-F0-9]{64}$/.test(hash)) return errorResponse(res, 400, "A valid recovery transaction hash is required");
+    const recoveryGenLayerTransactionHash = await getGenLayerTransactionHash(hash);
+    if (!recoveryGenLayerTransactionHash) return errorResponse(res, 502, "The recovery transaction was not accepted by the Bradbury consensus contract. No refund transaction was created.");
+    const marketplace = await readMarketplace();
+    const task = findTask(marketplace, req.params.id);
+    if (!task) return errorResponse(res, 404, "Bounty not found");
+    if (task.creatorWallet !== normalizeWallet(req.session.user.wallet)) return errorResponse(res, 403, "Only the task creator can recover this bounty");
+    await syncTaskFromGenLayer(task);
+    if (task.payout?.status === "paid" || task.payout?.status === "refunded") return errorResponse(res, 409, "This bounty has already been settled");
+    task.recovery = { status: "pending", transactionHash: hash, genlayerTransactionHash: recoveryGenLayerTransactionHash };
+    task.updatedAt = new Date().toISOString();
+    await saveMarketplace(marketplace);
+    await syncTaskFromGenLayer(task);
+    await saveMarketplace(marketplace);
+    return res.json({ success: true, task: taskForViewer(task, req.session.user) });
+  } catch (error) {
+    return errorResponse(res, 400, error.message || "Failed to record bounty recovery");
   }
 });
 

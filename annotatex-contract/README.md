@@ -4,8 +4,11 @@
 
 1. `create_task(task)` is payable and escrows GEN.
 2. `claim_task(task_id)` assigns the worker once.
-3. `submit_annotation(task_id, annotation)` evaluates the annotation against the stored client instructions using `gl.eq_principle.prompt_non_comparative`. It stores only the consensus verdict (`APPROVED` or `REJECTED`) and never transfers GEN.
-4. `claim_reward(task_id)` is the only payout function. It requires `APPROVED`, the original worker, and `paid == False`, then emits the finalized GEN transfer and marks the bounty paid.
+3. `submit_annotation(task_id, annotation)` runs an independent leader/validator evaluation inside `gl.vm.run_nondet_unsafe`, GenLayer's Equivalence-Principle execution path. Both model executions return a structured verdict and validators must agree on its `verdict` field before the contract stores `APPROVED` or `REJECTED`.
+4. `claim_reward(task_id)` is the worker payout function. It requires the assigned worker, an on-chain `APPROVED` verdict, and an unpaid/unrefunded bounty, then emits the GEN transfer and marks the bounty paid.
+5. `recover_bounty(task_id)` is restricted to the task creator. It refunds escrow immediately after a consensus `REJECTED` verdict, or after the deterministic deadline for an unclaimed/abandoned task. It cannot run after approval, payout, or an earlier refund.
+
+Deadlines are seven days for an unclaimed bounty and fourteen days after a worker claims it. GenLayer transaction timestamps are used so validators see identical deadline calculations.
 
 Deploy to Bradbury:
 
@@ -19,4 +22,4 @@ Run the command from the AnnotateX project directory, or use the absolute contra
 
 Set the resulting address in `annotatex-backend/.env` as `GENLAYER_CONTRACT`. The backend intentionally refuses to submit or prepare a reward for a bounty that is not linked to a deployed Bradbury contract.
 
-The contract tests in `tests/test_submission_flow.py` cover a clearly correct submission and a clearly wrong/random submission. They use GenLayer's official VM mock only to control the LLM response in tests; production verdicts come from validator consensus on-chain.
+The contract tests in `tests/test_submission_flow.py` cover approval and claim, rejection and blocked claim, creator-only recovery, double-settlement guards, and abandoned-task recovery after a warped deadline. They use GenLayer's official VM mock only to make the nondeterministic model transport reproducible; production verdicts come from the leader/validator consensus path on-chain.

@@ -53,7 +53,7 @@ function formatAmount(amount) {
 }
 
 function statusLabel(status) {
-  return String(status || "OPEN").toLowerCase();
+  return String(status || "OPEN").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function displayStatus(status) {

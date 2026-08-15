@@ -1508,6 +1508,10 @@ textarea:focus-visible {
 .status-claimed { color: #76adff; border-color: rgba(118,173,255,.35); background: rgba(118,173,255,.08); }
 .status-submitted { color: #e4b96b; border-color: rgba(228,185,107,.35); background: rgba(228,185,107,.08); }
 .status-completed { color: var(--success); border-color: rgba(93,204,139,.35); background: rgba(93,204,139,.08); }
+.status-submitted-pending-validation { color: #e4b96b; border-color: rgba(228,185,107,.35); background: rgba(228,185,107,.08); }
+.status-approved, .status-claimable, .status-paid { color: var(--success); border-color: rgba(93,204,139,.35); background: rgba(93,204,139,.08); }
+.status-rejected { color: var(--danger); border-color: rgba(255,107,107,.35); background: rgba(255,107,107,.08); }
+.status-refunded { color: #d1a3ff; border-color: rgba(209,163,255,.35); background: rgba(209,163,255,.08); }
 .task-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 20px 0; color: var(--muted); font-size: .75rem; }
 .verification-note { display: grid; gap: 5px; margin: 18px 0; padding: 12px 14px; border-left: 2px solid var(--accent); background: rgba(199,255,61,.05); color: var(--muted); font-size: .78rem; line-height: 1.45; }
 .verification-note strong { color: var(--text); text-transform: capitalize; }
