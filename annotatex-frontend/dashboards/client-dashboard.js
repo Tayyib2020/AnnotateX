@@ -1,5 +1,5 @@
 (async function () {
-const { apiFetch, showMessage, escapeHTML, shortWallet, formatDate, formatAmount, statusLabel, displayStatus, shouldShowRecoveryAction, initializeTheme, initializeMobileMenu, requireDashboardRole, connectWallet, sendPreparedTransaction, logout } = window.AnnotateX;
+const { apiFetch, showMessage, escapeHTML, shortWallet, formatDate, formatAmount, statusLabel, displayStatus, shouldShowRecoveryAction, shouldShowRecoveryPending, initializeTheme, initializeMobileMenu, requireDashboardRole, connectWallet, sendPreparedTransaction, logout } = window.AnnotateX;
 
 let currentUser;
 let connectedWallet = null;
@@ -45,13 +45,14 @@ function renderTasks() {
       ? `<a class="explorer-link" href="${escapeHTML(task.chain.recoveryTransactionUrl)}" target="_blank" rel="noopener noreferrer">Track refund in Bradbury Explorer -&gt;</a>`
       : "";
     const bountyAmount = formatAmount(task.bountyAmount);
+    const recoveryPending = shouldShowRecoveryPending(task);
     const recoveryAction = shouldShowRecoveryAction(task)
       ? `<button class="dashboard-button recovery-button" type="button" data-id="${escapeHTML(task.id)}" data-label="Recover ${escapeHTML(bountyAmount)}">Recover ${escapeHTML(bountyAmount)}</button>`
-      : task.recovery?.pending ? `<div class="work-result">REFUND TRANSACTION PENDING — Waiting for Bradbury consensus to finalize the refund.</div>` : "";
+      : recoveryPending ? `<div class="work-result">REFUND TRANSACTION PENDING — Waiting for Bradbury consensus to finalize the refund.</div>` : "";
     const payoutState = task.payout?.status === "claimable" ? "CLAIMABLE" : task.payout?.status === "paid" ? "PAID" : task.payout?.status === "refunded" ? "REFUNDED" : task.payout?.status === "rejected" ? "REFUND AVAILABLE" : "";
     const settlementMessage = task.payout?.status === "refunded"
       ? `Refunded — This submission was rejected or the task expired, and your escrowed ${bountyAmount} has been returned on-chain.`
-      : task.recovery?.pending
+      : recoveryPending
         ? "REFUND TRANSACTION PENDING — Your recovery transaction was submitted and is awaiting Bradbury finalization."
         : task.state === "REJECTED" && task.recovery?.eligible
           ? `GenLayer rejected this submission. Your ${bountyAmount} escrow is available for recovery.`
@@ -68,7 +69,7 @@ function renderTasks() {
                     : "";
     const settlementLabel = task.payout?.status === "refunded"
       ? "REFUNDED"
-      : task.recovery?.pending
+      : recoveryPending
         ? "REFUND TRANSACTION PENDING"
         : payoutState || displayStatus(task.state || task.status);
     return `<article class="dashboard-bounty"><div class="bounty-card-top"><span class="bounty-status status-${statusLabel(task.state || task.status)}">${escapeHTML(displayStatus(task.state || task.status))}</span><span class="bounty-amount">${escapeHTML(bountyAmount)}</span></div><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(task.description)}</p><div class="task-meta"><span>Created ${escapeHTML(formatDate(task.createdAt))}</span><span>${task.claimedBy ? `Claimed by ${escapeHTML(shortWallet(task.claimedBy))}` : "Open to the marketplace"}</span></div><div class="task-meta"><span>${task.chain?.linked ? `Bradbury task #${escapeHTML(String(task.chain.taskId))}` : "Local record  -  not on-chain"}</span>${payoutState ? `<span>Payout: ${escapeHTML(payoutState)}</span>` : ""}</div>${fundingLink || payoutLink || recoveryLink ? `<div class="task-meta">${fundingLink}${payoutLink}${recoveryLink}</div>` : ""}${task.verification && task.chain?.linked ? `<div class="verification-note"><strong>GenLayer: ${escapeHTML(displayStatus(task.verification.verdict || "UNDER_REVIEW"))}</strong><span>${task.status === "UNDER_REVIEW" ? "Validators are evaluating the submission against your original instructions." : "Consensus verdict recorded on-chain."}</span></div>` : ""}${settlementMessage ? `<div class="verification-note settlement-note"><strong>${escapeHTML(settlementLabel)}</strong><span>${settlementMessage}</span></div>` : ""}${recoveryAction ? `<div class="task-actions">${recoveryAction}</div>` : ""}</article>`;

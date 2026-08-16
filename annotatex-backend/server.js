@@ -211,6 +211,14 @@ function formatGenAmount(wei) {
   return fraction ? `${whole}.${fraction}` : String(whole);
 }
 
+function reconcileFinalizedRecovery(task, refunded) {
+  if (!refunded) return;
+  task.recovery = {
+    ...(task.recovery || {}),
+    status: "refunded",
+  };
+}
+
 function taskState(task) {
   if (!isOnChainTask(task)) return "LOCAL";
   const status = taskStatus(task);
@@ -352,6 +360,7 @@ async function syncTaskFromGenLayer(task) {
       refundedAt: refunded ? (task.payout?.refundedAt || checkedAt) : null,
     };
     task.refunded = Boolean(refunded);
+    reconcileFinalizedRecovery(task, refunded);
     task.status = paid
       ? "PAID"
       : verdict === "APPROVED"

@@ -95,4 +95,48 @@ test("a rejected recoverable bounty renders a recovery action", () => {
     payout: { status: "refunded" },
     recovery: { eligible: false, pending: false },
   }), false);
+
+  const shouldShowRecoveryPending = window.AnnotateX.shouldShowRecoveryPending;
+  assert.equal(shouldShowRecoveryPending({
+    payout: { status: "refunded" },
+    recovery: { pending: true },
+  }), false);
+  assert.equal(shouldShowRecoveryPending({
+    payout: { status: "rejected" },
+    recovery: { pending: true },
+  }), true);
+});
+
+test("finalized refund clears persisted pending recovery state and keeps its explorer reference", () => {
+  const start = server.indexOf("function reconcileFinalizedRecovery");
+  const end = server.indexOf("\n}\n", start) + 3;
+  assert.ok(start >= 0 && end > start);
+  const sandbox = {};
+  vm.runInNewContext(`${server.slice(start, end)}; this.reconcileFinalizedRecovery = reconcileFinalizedRecovery;`, sandbox);
+
+  const task = {
+    status: "REJECTED",
+    payout: {
+      status: "refunded",
+      onChain: true,
+      genlayerTransactionHash: "0xrefund-genlayer",
+    },
+    recovery: {
+      status: "pending",
+      transactionHash: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      genlayerTransactionHash: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    },
+  };
+
+  sandbox.reconcileFinalizedRecovery(task, true);
+
+  assert.equal(task.payout.status, "refunded");
+  assert.equal(task.payout.onChain, true);
+  assert.equal(task.recovery.status, "refunded");
+  assert.equal(task.recovery.pending, undefined);
+  assert.equal(task.recovery.transactionHash, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  assert.equal(task.recovery.genlayerTransactionHash, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+  assert.match(server, /task\.refunded = Boolean\(refunded\);\s+reconcileFinalizedRecovery\(task, refunded\);/);
+  assert.match(clientDashboard, /task\.payout\?\.status === "refunded"/);
+  assert.match(clientDashboard, /shouldShowRecoveryPending\(task\)/);
 });
