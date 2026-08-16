@@ -60,6 +60,15 @@ function displayStatus(status) {
   return String(status || "OPEN").replaceAll("_", " ");
 }
 
+function shouldShowRecoveryAction(task) {
+  const state = String(task?.state || task?.status || "").toUpperCase();
+  const payoutStatus = String(task?.payout?.status || "").toLowerCase();
+  return task?.recovery?.eligible === true
+    && task?.recovery?.pending !== true
+    && !["APPROVED", "PAID", "REFUNDED"].includes(state)
+    && !["paid", "refunded"].includes(payoutStatus);
+}
+
 // Keep dashboard text ASCII-safe so wallet labels and loading states do not
 // become mojibake when the static files are served with a different encoding.
 function shortWallet(wallet) {
@@ -168,6 +177,6 @@ async function logout() {
 
 window.AnnotateX = {
   API_URL, BRADBURY, apiFetch, showMessage, escapeHTML, shortWallet, formatDate, formatAmount,
-  statusLabel, displayStatus, initializeTheme, initializeMobileMenu, getCurrentUser, requireDashboardRole,
+  statusLabel, displayStatus, shouldShowRecoveryAction, initializeTheme, initializeMobileMenu, getCurrentUser, requireDashboardRole,
   connectWallet, switchToBradbury, sendPreparedTransaction, logout,
 };

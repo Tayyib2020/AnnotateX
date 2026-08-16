@@ -1,5 +1,5 @@
 (async function () {
-const { apiFetch, showMessage, escapeHTML, shortWallet, formatDate, formatAmount, statusLabel, displayStatus, initializeTheme, initializeMobileMenu, requireDashboardRole, connectWallet, sendPreparedTransaction, logout } = window.AnnotateX;
+const { apiFetch, showMessage, escapeHTML, shortWallet, formatDate, formatAmount, statusLabel, displayStatus, shouldShowRecoveryAction, initializeTheme, initializeMobileMenu, requireDashboardRole, connectWallet, sendPreparedTransaction, logout } = window.AnnotateX;
 
 let currentUser;
 let connectedWallet = null;
@@ -45,8 +45,8 @@ function renderTasks() {
       ? `<a class="explorer-link" href="${escapeHTML(task.chain.recoveryTransactionUrl)}" target="_blank" rel="noopener noreferrer">Track refund in Bradbury Explorer -&gt;</a>`
       : "";
     const bountyAmount = formatAmount(task.bountyAmount);
-    const recoveryAction = task.recovery?.eligible && !task.recovery?.pending && !["paid", "refunded"].includes(task.payout?.status)
-      ? `<button class="dashboard-button recovery-button" type="button" data-id="${escapeHTML(task.id)}">Recover ${escapeHTML(bountyAmount)}</button>`
+    const recoveryAction = shouldShowRecoveryAction(task)
+      ? `<button class="dashboard-button recovery-button" type="button" data-id="${escapeHTML(task.id)}" data-label="Recover ${escapeHTML(bountyAmount)}">Recover ${escapeHTML(bountyAmount)}</button>`
       : task.recovery?.pending ? `<div class="work-result">REFUND TRANSACTION PENDING — Waiting for Bradbury consensus to finalize the refund.</div>` : "";
     const payoutState = task.payout?.status === "claimable" ? "CLAIMABLE" : task.payout?.status === "paid" ? "PAID" : task.payout?.status === "refunded" ? "REFUNDED" : task.payout?.status === "rejected" ? "REFUND AVAILABLE" : "";
     const settlementMessage = task.payout?.status === "refunded"
@@ -98,7 +98,7 @@ async function recoverBounty(id, button) {
     await loadTasks();
   } catch (error) {
     button.disabled = false;
-    button.textContent = "Recover escrow";
+    button.textContent = button.dataset.label || "Recover escrow";
     showMessage($("#dashboard-message"), error.message, "error");
   }
 }

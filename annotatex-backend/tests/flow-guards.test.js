@@ -2,10 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 
 const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
 const persistence = fs.readFileSync(path.join(__dirname, "..", "persistence.js"), "utf8");
 const clientDashboard = fs.readFileSync(path.join(__dirname, "..", "..", "annotatex-frontend", "dashboards", "client-dashboard.js"), "utf8");
+const dashboardCommon = fs.readFileSync(path.join(__dirname, "..", "..", "annotatex-frontend", "dashboards", "dashboard-common.js"), "utf8");
 const contract = fs.readFileSync(path.join(__dirname, "..", "..", "annotatex-contract", "AnnotateXBounty.py"), "utf8");
 
 test("a non-empty submission cannot be approved or paid by Express", () => {
@@ -71,4 +73,26 @@ test("on-chain sync uses the contract bounty amount and recovery state", () => {
   assert.match(server, /task\.bountyAmount = formatGenAmount\(rawBounty\)/);
   assert.match(server, /status: task\.payout\?\.status === "refunded"/);
   assert.match(server, /task\.recoveryEligible === true/);
+});
+
+test("a rejected recoverable bounty renders a recovery action", () => {
+  const window = {};
+  vm.runInNewContext(dashboardCommon, { window });
+  const shouldShowRecoveryAction = window.AnnotateX.shouldShowRecoveryAction;
+
+  assert.equal(shouldShowRecoveryAction({
+    state: "REJECTED",
+    payout: { status: "rejected" },
+    recovery: { eligible: true, pending: false },
+  }), true);
+  assert.equal(shouldShowRecoveryAction({
+    state: "APPROVED",
+    payout: { status: "claimable" },
+    recovery: { eligible: true, pending: false },
+  }), false);
+  assert.equal(shouldShowRecoveryAction({
+    state: "REJECTED",
+    payout: { status: "refunded" },
+    recovery: { eligible: false, pending: false },
+  }), false);
 });
