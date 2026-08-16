@@ -44,11 +44,34 @@ function renderTasks() {
     const recoveryLink = task.chain?.recoveryTransactionUrl
       ? `<a class="explorer-link" href="${escapeHTML(task.chain.recoveryTransactionUrl)}" target="_blank" rel="noopener noreferrer">Track refund in Bradbury Explorer -&gt;</a>`
       : "";
+    const bountyAmount = formatAmount(task.bountyAmount);
     const recoveryAction = task.recovery?.eligible && !task.recovery?.pending && !["paid", "refunded"].includes(task.payout?.status)
-      ? `<button class="dashboard-button recovery-button" type="button" data-id="${escapeHTML(task.id)}">Recover escrow</button>`
-      : task.recovery?.pending ? `<div class="work-result">Refund transaction pending finalization</div>` : "";
-    const payoutState = task.payout?.status === "claimable" ? "CLAIMABLE" : task.payout?.status === "paid" ? "PAID" : task.payout?.status === "refunded" ? "REFUNDED" : "";
-    return `<article class="dashboard-bounty"><div class="bounty-card-top"><span class="bounty-status status-${statusLabel(task.state || task.status)}">${escapeHTML(displayStatus(task.state || task.status))}</span><span class="bounty-amount">${escapeHTML(formatAmount(task.bountyAmount))}</span></div><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(task.description)}</p><div class="task-meta"><span>Created ${escapeHTML(formatDate(task.createdAt))}</span><span>${task.claimedBy ? `Claimed by ${escapeHTML(shortWallet(task.claimedBy))}` : "Open to the marketplace"}</span></div><div class="task-meta"><span>${task.chain?.linked ? `Bradbury task #${escapeHTML(String(task.chain.taskId))}` : "Local record  -  not on-chain"}</span>${payoutState ? `<span>Payout: ${escapeHTML(payoutState)}</span>` : ""}</div>${fundingLink || payoutLink || recoveryLink ? `<div class="task-meta">${fundingLink}${payoutLink}${recoveryLink}</div>` : ""}${task.verification && task.chain?.linked ? `<div class="verification-note"><strong>GenLayer: ${escapeHTML(displayStatus(task.verification.verdict || "UNDER_REVIEW"))}</strong><span>${task.status === "UNDER_REVIEW" ? "Validators are evaluating the submission against your original instructions." : "Consensus verdict recorded on-chain."}</span></div>` : ""}${recoveryAction ? `<div class="task-actions">${recoveryAction}</div>` : ""}</article>`;
+      ? `<button class="dashboard-button recovery-button" type="button" data-id="${escapeHTML(task.id)}">Recover ${escapeHTML(bountyAmount)}</button>`
+      : task.recovery?.pending ? `<div class="work-result">REFUND TRANSACTION PENDING — Waiting for Bradbury consensus to finalize the refund.</div>` : "";
+    const payoutState = task.payout?.status === "claimable" ? "CLAIMABLE" : task.payout?.status === "paid" ? "PAID" : task.payout?.status === "refunded" ? "REFUNDED" : task.payout?.status === "rejected" ? "REFUND AVAILABLE" : "";
+    const settlementMessage = task.payout?.status === "refunded"
+      ? `Refunded — This submission was rejected or the task expired, and your escrowed ${bountyAmount} has been returned on-chain.`
+      : task.recovery?.pending
+        ? "REFUND TRANSACTION PENDING — Your recovery transaction was submitted and is awaiting Bradbury finalization."
+        : task.state === "REJECTED" && task.recovery?.eligible
+          ? `GenLayer rejected this submission. Your ${bountyAmount} escrow is available for recovery.`
+          : task.state === "REJECTED"
+            ? `GenLayer rejected this submission. The escrow remains in the contract until an eligible recovery is confirmed.`
+            : task.recovery?.eligible
+              ? `This abandoned bounty is now past its deadline. Your ${bountyAmount} escrow is available for recovery.`
+              : task.state === "APPROVED" && task.payout?.status === "claimable"
+                ? `Approved by GenLayer. The freelancer can claim your ${bountyAmount} bounty.`
+                : task.state === "PAID"
+                  ? `PAID — The approved freelancer payout of ${bountyAmount} was finalized on-chain.`
+                  : task.recovery?.deadline
+                    ? `Escrow remains locked until ${escapeHTML(formatDate(Number(task.recovery.deadline) * 1000))} unless the task is rejected.`
+                    : "";
+    const settlementLabel = task.payout?.status === "refunded"
+      ? "REFUNDED"
+      : task.recovery?.pending
+        ? "REFUND TRANSACTION PENDING"
+        : payoutState || displayStatus(task.state || task.status);
+    return `<article class="dashboard-bounty"><div class="bounty-card-top"><span class="bounty-status status-${statusLabel(task.state || task.status)}">${escapeHTML(displayStatus(task.state || task.status))}</span><span class="bounty-amount">${escapeHTML(bountyAmount)}</span></div><h3>${escapeHTML(task.title)}</h3><p>${escapeHTML(task.description)}</p><div class="task-meta"><span>Created ${escapeHTML(formatDate(task.createdAt))}</span><span>${task.claimedBy ? `Claimed by ${escapeHTML(shortWallet(task.claimedBy))}` : "Open to the marketplace"}</span></div><div class="task-meta"><span>${task.chain?.linked ? `Bradbury task #${escapeHTML(String(task.chain.taskId))}` : "Local record  -  not on-chain"}</span>${payoutState ? `<span>Payout: ${escapeHTML(payoutState)}</span>` : ""}</div>${fundingLink || payoutLink || recoveryLink ? `<div class="task-meta">${fundingLink}${payoutLink}${recoveryLink}</div>` : ""}${task.verification && task.chain?.linked ? `<div class="verification-note"><strong>GenLayer: ${escapeHTML(displayStatus(task.verification.verdict || "UNDER_REVIEW"))}</strong><span>${task.status === "UNDER_REVIEW" ? "Validators are evaluating the submission against your original instructions." : "Consensus verdict recorded on-chain."}</span></div>` : ""}${settlementMessage ? `<div class="verification-note settlement-note"><strong>${escapeHTML(settlementLabel)}</strong><span>${settlementMessage}</span></div>` : ""}${recoveryAction ? `<div class="task-actions">${recoveryAction}</div>` : ""}</article>`;
   }).join("");
   list.querySelectorAll(".recovery-button").forEach((button) => button.addEventListener("click", () => recoverBounty(button.dataset.id, button)));
 }

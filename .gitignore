@@ -6,6 +6,9 @@
 **/npm-debug.log*
 **/yarn-debug.log*
 **/yarn-error.log*
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
 **/marketplace.json
 **/users.json
 **/.DS_Store

@@ -60,4 +60,15 @@ test("the client dashboard exposes real funding and payout Explorer links", () =
   assert.match(clientDashboard, /Track payout in Bradbury Explorer/);
   assert.match(clientDashboard, /recoveryTransactionUrl/);
   assert.match(clientDashboard, /recovery\/prepare/);
+  assert.match(clientDashboard, /REFUND TRANSACTION PENDING/);
+  assert.match(clientDashboard, /available for recovery/);
+  assert.match(clientDashboard, /has been returned on-chain/);
+  assert.match(clientDashboard, /Recover \$\{escapeHTML\(bountyAmount\)\}/);
+});
+
+test("on-chain sync uses the contract bounty amount and recovery state", () => {
+  assert.match(server, /getBounty\(task\.chainTaskId\)/);
+  assert.match(server, /task\.bountyAmount = formatGenAmount\(rawBounty\)/);
+  assert.match(server, /status: task\.payout\?\.status === "refunded"/);
+  assert.match(server, /task\.recoveryEligible === true/);
 });

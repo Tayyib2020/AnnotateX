@@ -16,6 +16,7 @@ const {
   prepareClaimReward,
   prepareRecoverBounty,
   getTaskCount,
+  getBounty,
   getVerdict,
   getPayoutStatus,
   isPaid,
@@ -202,6 +203,14 @@ function taskStatus(task) {
   return "OPEN";
 }
 
+function formatGenAmount(wei) {
+  const value = BigInt(wei);
+  const unit = 10n ** 18n;
+  const whole = value / unit;
+  const fraction = (value % unit).toString().padStart(18, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction}` : String(whole);
+}
+
 function taskState(task) {
   if (!isOnChainTask(task)) return "LOCAL";
   const status = taskStatus(task);
@@ -258,6 +267,13 @@ function taskForViewer(task, viewer) {
       eligible: task.recoveryEligible === true,
       deadline: task.recoveryDeadline || null,
       pending: task.recovery?.status === "pending",
+      status: task.payout?.status === "refunded"
+        ? "REFUNDED"
+        : task.recovery?.status === "pending"
+          ? "PENDING"
+          : task.recoveryEligible === true
+            ? (task.verification?.verdict === "REJECTED" ? "REJECTED" : "DEADLINE")
+            : "NOT_ELIGIBLE",
     },
     verification: trustedVerification,
     canManage: Boolean(isOwner),
@@ -299,7 +315,7 @@ async function syncTaskFromGenLayer(task) {
   if (!isOnChainTask(task)) return false;
   try {
     await syncTaskTransactionReferences(task);
-    const [rawVerdict, payoutStatus, paid, refunded, claimed, worker, deadline, recoveryEligible] = await Promise.all([
+    const [rawVerdict, payoutStatus, paid, refunded, claimed, worker, deadline, recoveryEligible, rawBounty] = await Promise.all([
       getVerdict(task.chainTaskId),
       getPayoutStatus(task.chainTaskId),
       isPaid(task.chainTaskId),
@@ -308,12 +324,14 @@ async function syncTaskFromGenLayer(task) {
       getWorker(task.chainTaskId),
       getDeadline(task.chainTaskId),
       canRecover(task.chainTaskId),
+      getBounty(task.chainTaskId),
     ]);
     const verdict = String(rawVerdict || "").trim().toUpperCase();
     const workerAddress = String(worker || "").trim();
     if (workerAddress && workerAddress.toLowerCase() !== ethers.ZeroAddress.toLowerCase()) task.claimedBy = normalizeWallet(workerAddress);
     task.recoveryDeadline = String(deadline || "");
     task.recoveryEligible = Boolean(recoveryEligible);
+    task.bountyAmount = formatGenAmount(rawBounty);
     const checkedAt = new Date().toISOString();
     if (task.submission || verdict === "APPROVED" || verdict === "REJECTED") {
       task.verification = {
